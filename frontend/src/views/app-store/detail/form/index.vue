@@ -39,6 +39,31 @@
                 </el-select>
             </el-form-item>
 
+            <el-form-item :label="$t('app.network')">
+                <el-select
+                    v-for="(network, index) in formData.params.PANEL_NETWORKS"
+                    :key="network"
+                    v-model="formData.params.PANEL_NETWORKS[index]"
+                    class="block mb-2"
+                    clearable
+                    @change="changeNetworkList(Number(index))"
+                >
+                    <el-option
+                        v-for="item in networkOptions"
+                        :key="item.option"
+                        :label="item.option"
+                        :value="item.option"
+                        :disabled="
+                            item.option !== 'host' &&
+                            formData.params.PANEL_NETWORKS.some(
+                                (selected, selectedIndex) => selectedIndex !== index && selected === item.option,
+                            )
+                        "
+                    />
+                </el-select>
+                <el-button @click="addNetwork">{{ $t('commons.button.add') }}</el-button>
+            </el-form-item>
+
             <Params
                 :key="paramKey"
                 v-if="showParams"
@@ -57,7 +82,7 @@
                     <el-input v-model.trim="formData.containerName" :placeholder="$t('app.containerNameHelper')" />
                 </el-form-item>
 
-                <el-form-item prop="allowPort" v-if="!isHostMode">
+                <el-form-item prop="allowPort">
                     <el-checkbox v-model="formData.allowPort" :label="$t('app.allowPort')" size="large" />
                     <span class="input-help">{{ $t('app.allowPortHelper') }}</span>
                 </el-form-item>
@@ -155,7 +180,7 @@ import Params from '../params/index.vue';
 import { Container } from '@/api/interface/container';
 import CodemirrorPro from '@/components/codemirror-pro/index.vue';
 import { computeSizeFromMB } from '@/utils/size';
-import { loadResourceLimit } from '@/api/modules/container';
+import { listNetwork, loadResourceLimit } from '@/api/modules/container';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 const { isMaster, isOffline, isXpackOrEE } = useGlobalStore();
 
@@ -202,6 +227,8 @@ const emit = defineEmits<Emits>();
 const formRef = ref<FormInstance>();
 const paramKey = ref(1);
 const isHostMode = ref(false);
+const networkOptions = ref<Container.Options[]>([]);
+const networkConfigChanged = ref(false);
 const memoryRequired = ref(0);
 const gpuSupport = ref(false);
 const installParams = ref<App.AppParams>();
@@ -288,6 +315,8 @@ const getVersionDetail = async (version: string) => {
     formRules.value.params = [];
     showParams.value = false;
     isHostMode.value = false;
+    networkConfigChanged.value = false;
+    formData.value.params.PANEL_NETWORKS = [];
     memoryRequired.value = 0;
     gpuSupport.value = false;
 
@@ -299,6 +328,16 @@ const getVersionDetail = async (version: string) => {
         formData.value.appDetailId = res.data.id;
         formData.value.dockerCompose = res.data.dockerCompose;
         isHostMode.value = res.data.hostMode;
+        formData.value.params.PANEL_NETWORKS = Array.isArray(res.data.networks) ? [...res.data.networks] : [];
+        if (res.data.hostMode) {
+            formData.value.params.PANEL_NETWORKS = ['host'];
+        } else if (formData.value.params.PANEL_NETWORKS.length === 0) {
+            formData.value.params.PANEL_NETWORKS = [''];
+        }
+        networkConfigChanged.value = false;
+        listNetwork().then((networkRes) => {
+            networkOptions.value = networkRes.data || [];
+        });
         if (env.value) {
             installParams.value = addMasterParams(res.data.params);
         } else {
@@ -401,6 +440,8 @@ const resetForm = () => {
     }
     Object.assign(formData.value, initFormData());
     isHostMode.value = false;
+    networkConfigChanged.value = false;
+    formData.value.params.PANEL_NETWORKS = [];
     memoryRequired.value = 0;
     gpuSupport.value = false;
     showParams.value = false;
@@ -422,7 +463,47 @@ const clearValidate = () => {
     }
 };
 
+const updateNetworkParams = () => {
+    if (networkConfigChanged.value) {
+        formData.value.params.PANEL_NETWORKS = [...formData.value.params.PANEL_NETWORKS].filter(
+            (network) => network !== '',
+        );
+    } else {
+        delete formData.value.params.PANEL_NETWORKS;
+    }
+};
+
+const changeNetworkList = (index: number) => {
+    if (!formData.value.params.PANEL_NETWORKS[index]) {
+        formData.value.params.PANEL_NETWORKS.splice(index, 1);
+    }
+    if (formData.value.params.PANEL_NETWORKS[index] === 'host') {
+        formData.value.params.PANEL_NETWORKS = ['host'];
+    } else {
+        formData.value.params.PANEL_NETWORKS = formData.value.params.PANEL_NETWORKS.filter(
+            (network) => network !== 'host',
+        );
+    }
+    networkConfigChanged.value = true;
+    updateNetworkParams();
+};
+
+const addNetwork = () => {
+    formData.value.params.PANEL_NETWORKS ??= [];
+    const available = networkOptions.value.find(
+        (item) => item.option !== 'host' && !formData.value.params.PANEL_NETWORKS.includes(item.option),
+    );
+    if (!available) return;
+    if (formData.value.params.PANEL_NETWORKS.includes('host')) {
+        formData.value.params.PANEL_NETWORKS = [];
+    }
+    formData.value.params.PANEL_NETWORKS.push(available.option);
+    networkConfigChanged.value = true;
+    updateNetworkParams();
+};
+
 const getFormData = () => {
+    updateNetworkParams();
     return { ...formData.value };
 };
 

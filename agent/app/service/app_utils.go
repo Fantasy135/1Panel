@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -1718,6 +1719,32 @@ func addDockerComposeCommonParam(composeMap map[string]interface{}, serviceName 
 		return buserr.New("ErrFileParse")
 	}
 	serviceValue := service.(map[string]interface{})
+	networksValue, networksSubmitted := params["PANEL_NETWORKS"]
+	if networksSubmitted {
+		networks := uniqueComposeNetworks(networksValue)
+		if slices.Contains(networks, "host") {
+			serviceValue["network_mode"] = "host"
+			delete(serviceValue, "networks")
+			delete(serviceValue, "ports")
+		} else {
+			delete(serviceValue, "network_mode")
+			if len(networks) == 0 {
+				delete(serviceValue, "networks")
+			} else {
+				serviceValue["networks"] = networks
+				composeNetworks, _ := composeMap["networks"].(map[string]interface{})
+				if composeNetworks == nil {
+					composeNetworks = map[string]interface{}{}
+				}
+				for _, network := range networks {
+					if _, exists := composeNetworks[network]; !exists {
+						composeNetworks[network] = map[string]interface{}{"external": true}
+					}
+				}
+				composeMap["networks"] = composeNetworks
+			}
+		}
+	}
 
 	deploy := map[string]interface{}{}
 	if de, ok := serviceValue["deploy"]; ok {
@@ -1791,6 +1818,37 @@ func addDockerComposeCommonParam(composeMap map[string]interface{}, serviceName 
 	return nil
 }
 
+func uniqueComposeNetworks(value interface{}) []string {
+	result := make([]string, 0)
+	seen := make(map[string]struct{})
+	values, ok := value.([]interface{})
+	if !ok {
+		valuesString, stringOK := value.([]string)
+		if !stringOK {
+			return result
+		}
+		for _, network := range valuesString {
+			if network != "" {
+				if _, exists := seen[network]; !exists {
+					seen[network] = struct{}{}
+					result = append(result, network)
+				}
+			}
+		}
+		return result
+	}
+	for _, item := range values {
+		network, ok := item.(string)
+		if ok && network != "" {
+			if _, exists := seen[network]; !exists {
+				seen[network] = struct{}{}
+				result = append(result, network)
+			}
+		}
+	}
+	return result
+}
+
 func getAppCommonConfig(envs map[string]interface{}) request.AppContainerConfig {
 	config := request.AppContainerConfig{}
 
@@ -1838,20 +1896,46 @@ func getAppCommonConfig(envs map[string]interface{}) request.AppContainerConfig 
 	return config
 }
 
-func isHostModel(dockerCompose string) bool {
+func getComposeNetworkConfig(dockerCompose string) (string, []string) {
 	composeMap := make(map[string]interface{})
-	_ = yaml.Unmarshal([]byte(dockerCompose), &composeMap)
-	services, serviceValid := composeMap["services"].(map[string]interface{})
-	if !serviceValid {
-		return false
+	if yaml.Unmarshal([]byte(dockerCompose), &composeMap) != nil {
+		return "bridge", nil
+	}
+	services, ok := composeMap["services"].(map[string]interface{})
+	if !ok {
+		return "bridge", nil
 	}
 	for _, service := range services {
-		serviceValue := service.(map[string]interface{})
-		if value, ok := serviceValue["network_mode"]; ok && value == "host" {
-			return true
+		serviceValue, ok := service.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if mode, ok := serviceValue["network_mode"].(string); ok && mode == "host" {
+			return "host", nil
+		}
+		if networks, ok := serviceValue["networks"].([]interface{}); ok {
+			result := make([]string, 0, len(networks))
+			for _, network := range networks {
+				if name, ok := network.(string); ok {
+					result = append(result, name)
+				}
+			}
+			return "bridge", result
+		}
+		if networks, ok := serviceValue["networks"].(map[string]interface{}); ok {
+			result := make([]string, 0, len(networks))
+			for name := range networks {
+				result = append(result, name)
+			}
+			return "bridge", result
 		}
 	}
-	return false
+	return "bridge", nil
+}
+
+func isHostModel(dockerCompose string) bool {
+	mode, _ := getComposeNetworkConfig(dockerCompose)
+	return mode == "host"
 }
 
 func copyAppDetailMissing(fileOp files.FileOp, srcDir, dstDir string) error {

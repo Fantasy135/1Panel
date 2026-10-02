@@ -71,6 +71,7 @@ type AppDetailDTO struct {
 	Params         interface{} `json:"params"`
 	Image          string      `json:"image"`
 	HostMode       bool        `json:"hostMode"`
+	Networks       []string    `json:"networks"`
 	Architectures  string      `json:"architectures"`
 	MemoryRequired int         `json:"memoryRequired"`
 	GpuSupport     bool        `json:"gpuSupport"`

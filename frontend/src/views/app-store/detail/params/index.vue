@@ -201,7 +201,7 @@ const propStart = computed({
 const paramObjs = ref<ParamObj[]>([]);
 
 const updateParam = () => {
-    emit('update:form', form);
+    emit('update:form', { ...props.form, ...form });
 };
 
 const isMysql = (form: object, envKey: string) => {
@@ -212,6 +212,9 @@ const handleParams = () => {
     rules = props.rules;
     if (params.value != undefined && params.value.formFields != undefined) {
         for (const p of params.value.formFields) {
+            if (p.envKey === 'PANEL_NETWORKS') {
+                continue;
+            }
             const pObj = p;
             pObj.prop = propStart.value + p.envKey;
             pObj.disabled = p.disabled;

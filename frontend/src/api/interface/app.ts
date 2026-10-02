@@ -80,6 +80,7 @@ export namespace App {
         dockerCompose: string;
         image: string;
         hostMode?: boolean;
+        networks?: string[];
         memoryRequired: number;
         architectures: string;
         gpuSupport: boolean;

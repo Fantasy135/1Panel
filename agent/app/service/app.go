@@ -323,7 +323,9 @@ func (a AppService) GetAppDetail(appID uint, version, appType string) (response.
 		appDetailDTO.DockerCompose = string(composeRes)
 	}
 
-	appDetailDTO.HostMode = isHostModel(appDetailDTO.DockerCompose)
+	networkMode, networks := getComposeNetworkConfig(appDetailDTO.DockerCompose)
+	appDetailDTO.HostMode = networkMode == "host"
+	appDetailDTO.Networks = networks
 
 	if err := checkLimit(app); err != nil {
 		appDetailDTO.Enable = false
@@ -345,7 +347,9 @@ func (a AppService) GetAppDetailByID(id uint) (*response.AppDetailDTO, error) {
 		return nil, err
 	}
 	res.Params = paramMap
-	res.HostMode = isHostModel(appDetail.DockerCompose)
+	networkMode, networks := getComposeNetworkConfig(appDetail.DockerCompose)
+	res.HostMode = networkMode == "host"
+	res.Networks = networks
 	return res, nil
 }
 
